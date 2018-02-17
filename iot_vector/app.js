@@ -3,7 +3,7 @@
 init();
 addGridHelper();
 addPoints();
-drawLine();
+// drawLine();
 animate();
 
 
@@ -12,7 +12,7 @@ function animate() {
     requestAnimationFrame( animate );
     // animateCamera();
     movePoints();
-    moveLine();
+    // moveLine();
     renderer.render( scene, camera );
 }
 
@@ -24,6 +24,7 @@ function animateCamera() {
 }
 
 function init(){
+    pointsData = [];
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 10000 );
     
@@ -63,23 +64,28 @@ function addGridHelper(){
 
 function addPoints(){
     var particles = 25;
-    var n = 1000; 
-    var geometry = new THREE.BufferGeometry();
-    var positions = [];
-    movementVectors = [];
-    var colors = [];
-    var color = new THREE.Color();
     var n = 1000, n2 = n / 2; // particles spread in the cube
+    
     for ( var i = 0; i < particles; i ++ ) {
         // positions
         var x = Math.random() * n - n2;
         var y = Math.random() * n;
         var z = Math.random() * n - n2;
-        positions.push( x, y, z );
-
-        colors.push( 0, 255, 0 );
-        movementVectors.push( Math.random() * 2 - 1, Math.random() * 6 - 3, Math.random() * 6 - 3)
+        addPoint(x,y,z);
     }
+    drawPoints();
+}
+
+function drawPoints(){
+    var geometry = new THREE.BufferGeometry();
+    var positions = [];
+    movementVectors = [];
+    var colors = [];
+    var color = new THREE.Color();
+    pointsData.forEach(p => {
+        positions.push( p.position.x, p.position.y, p.position.z );
+        colors.push( 0, 255, 0 );
+    });
 
     geometry.addAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
     geometry.addAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
@@ -89,28 +95,63 @@ function addPoints(){
     scene.add( points );
 }
 
-function movePoints(){
+function addPoint(x, y, z){
+    
+    pointsData.push({
+        position: {x: x, y: y, z: z, t: (new Date).getTime()},
+        trail: [],
+        movementVector: {x: 0, y: 0, z: 0},
+    });
+}
+
+function redrawPoints(){
+    pointsData.forEach((p,i) => {
+        redrawPoint(i);
+    });
+}
+
+function redrawPoint(i){
+    var p = pointsData[i];
     var positions = points.geometry.attributes.position.array;
-    for(var i =0; i< positions.length; i++){
-        positions[i]+= movementVectors[i];
-        if(positions[i] > 500 || positions[i] < -500) movementVectors[i] *= -1;
-    }
-    points.geometry.attributes.position.needsUpdate = true;
+    positions[i*3] = p.position.x;
+    positions[i*3+1] = p.position.y;
+    positions[i*3+2] = p.position.z;
+    points.geometry.attributes.position.needsUpdate = true;   
+    
+    if(p.line) scene.remove(p.line);
+    p.line = createLine(p.trail);
+    scene.add(p.line);
+
 }
 
-function drawLine() {
-    var material = new THREE.LineBasicMaterial({ color: 0x0000ff });
+function createLine(trail){
+    var material = new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 });
     var geometry = new THREE.Geometry();
-    geometry.vertices.push(new THREE.Vector3(-100, 0, 0));
-    geometry.vertices.push(new THREE.Vector3(0, 100, 0));
-    geometry.vertices.push(new THREE.Vector3(100, 0, 0));
-    line = new THREE.Line(geometry, material);
-    scene.add(line);
+    var line = new THREE.Line(geometry, material);
+    line.geometry.vertices = trail.map(t => {return new THREE.Vector3(t.x, t.y, t.z);});
+    // p.line.geometry.verticesNeedUpdate = true;
+    return line;
 }
 
-function moveLine(){
-    var last = line.geometry.vertices[line.geometry.vertices.length -1];
-    line.geometry.vertices.push(last.clone().add(new THREE.Vector3(Math.random() * 12 - 6, Math.random() * 16 - 8, Math.random() * 16 - 8)));
-    if(line.geometry.vertices.length > 12) { line.geometry.vertices.shift(); }
-    line.geometry.verticesNeedUpdate = true;
+function movePoints(){
+    var trailDuration = 1000;
+    pointsData.forEach((p,i) => {
+        if(i < 5 + Math.random() * 10){
+            if(Math.random() < 0.01) p.movementVector.x += Math.random()-0.5;
+            if(Math.random() < 0.001) p.movementVector.y += Math.random()-0.5;
+            if(Math.random() < 0.02) p.movementVector.z += Math.random()-0.5;
+        }
+        var newPos = {t: (new Date).getTime()};
+        ['x', 'y', 'z'].forEach(i => {
+            newPos[i] = p.position[i] + p.movementVector[i];
+            if(newPos[i] > 500 || newPos[i] < -500) {p.movementVector[i] *= -0.5;newPos[i] += 2* p.movementVector[i]; };
+        });
+       
+        if(newPos.x != p.position.x ||  newPos.z != p.position.z || newPos.y != p.position.y){
+            p.trail.push(p.position);
+            p.position = newPos;
+        }
+        _.remove(p.trail, t => p.position.t - t.t > trailDuration);
+    });
+    redrawPoints();
 }
